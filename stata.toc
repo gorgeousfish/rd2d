@@ -1,0 +1,5 @@
+v 3
+d rd2d: Boundary regression discontinuity designs for Stata
+d Location-based and signed-distance local polynomial boundary RD commands.
+d Requires Stata 16 or newer; no R runtime dependency.
+p rd2d Boundary regression discontinuity designs for Stata

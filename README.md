@@ -36,8 +36,8 @@ sensitivity, table construction, and diagnostics.
 ## Installation
 
 ```stata
-net install rd2d, from("https://raw.githubusercontent.com/gorgeousfish/rd2d/main/pkg") replace
-net get rd2d, from("https://raw.githubusercontent.com/gorgeousfish/rd2d/main/pkg") replace
+net install rd2d, from("https://raw.githubusercontent.com/gorgeousfish/rd2d/main") replace
+net get rd2d, from("https://raw.githubusercontent.com/gorgeousfish/rd2d/main") replace
 ```
 
 `net install` places ado and help files on the adopath. `net get` retrieves

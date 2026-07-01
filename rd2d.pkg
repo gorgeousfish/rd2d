@@ -1,0 +1,37 @@
+v 3
+d rd2d: Boundary regression discontinuity designs for Stata
+d Location-based and signed-distance local polynomial boundary RD commands.
+d Version: 1.1.0
+d Requires: Stata 16 or newer; no R runtime dependency.
+f ado/rd2d.ado
+f ado/rdbw2d.ado
+f ado/rd2d_dist.ado
+f ado/rdbw2d_dist.ado
+f ado/rd2d_summary.ado
+f ado/rd2d_diagnostics.ado
+f ado/rd2d_plot.ado
+f ado/rd2d_aggregate.ado
+f ado/rd2d_table.ado
+f ado/rd2d_bwsens.ado
+f ado/_rd2d_dist_fit.ado
+f ado/_rd2d_loc_fit.ado
+f ado/_rd2d_masspoints_warn.ado
+f help/rd2d.sthlp
+f help/rdbw2d.sthlp
+f help/rd2d_dist.sthlp
+f help/rdbw2d_dist.sthlp
+f help/rd2d_plot.sthlp
+f help/rd2d_summary.sthlp
+f help/rd2d_diagnostics.sthlp
+f help/rd2d_aggregate.sthlp
+f help/rd2d_table.sthlp
+f help/rd2d_bwsens.sthlp
+f examples/rd2d_location_example.do
+f examples/rd2d_distance_example.do
+f examples/rd2d_cluster_example.do
+f examples/rd2d_cbands_example.do
+f examples/rd2d_imse_example.do
+f examples/rd2d_table_example.do
+f examples/rd2d_table_example_esttab.do
+f examples/rd2d_sensitivity_example.do
+f examples/rd2d_tutorial_workflow.do
