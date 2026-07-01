@@ -9,7 +9,7 @@ program define rd2d_dist, eclass
         [H(string asis) P(integer 1) Q(string) KINK(string) KERnel(string) ///
          LEVEL(real 95) SIDE(string) BWSELect(string) VCE(string) RBC(string) ///
          BWCHeck(string) MASSPoints(string) SCALEregul(real 1) CQT(real 0.5) ///
-         CBANDs REPP(integer 1000) CLuster(varname) ///
+         CBANDs NOCBANDs REPP(integer 1000) CLuster(varname) ///
          MP(string) SR(real -1) BWS(string)]
 
     gettoken yvar dvars : varlist
@@ -18,6 +18,10 @@ program define rd2d_dist, eclass
         di as err "at least one distance variable is required after the outcome variable"
         exit 198
     }
+
+    // --- cbands default logic (v1.2.0: default ON, nocbands to disable) ---
+    local cbands_on = ("`nocbands'" == "")
+
     local clustername "`cluster'"
     local clusterwork "`cluster'"
     marksample touse
@@ -53,20 +57,22 @@ program define rd2d_dist, eclass
     }
 
     if (`p' < 0) {
-        di as err "p() must be a nonnegative integer (0, 1, 2, ...); got `p'"
+        di as err "p() must be a positive integer (typically 1, 2, or 3); got `p'"
+        di as err "  p=1 (local linear) is recommended for most applications"
         exit 198
     }
     local qeff -1
     if ("`q'" != "") {
         capture confirm integer number `q'
         if (_rc | `q' < 0 | `q' >= .) {
-            di as err "q() must be a nonnegative integer (0, 1, 2, ...); got `q'"
+            di as err "q() must be a nonnegative integer >= p (currently p=`p'); got `q'"
+            di as err "  q=p+1 is the default for bias correction"
             exit 198
         }
         local qeff = `q'
     }
     if (`level' <= 0 | `level' >= 100) {
-        di as err "level() must be between 0 and 100"
+        di as err "level() must be between 0 and 100 (e.g., 95 for 95% confidence)"
         exit 198
     }
     if (`repp' < 1) {
@@ -74,7 +80,7 @@ program define rd2d_dist, eclass
         exit 198
     }
     if (`scaleregul' >= . | `scaleregul' < 0) {
-        di as err "scaleregul() must be finite and nonnegative"
+        di as err "scaleregul() must be a non-negative number (default: 1 for distance)"
         exit 198
     }
     if (`cqt' <= 0 | `cqt' >= 1) {
@@ -89,7 +95,8 @@ program define rd2d_dist, eclass
     if inlist("`kernel'", "epa", "epan") local kernel "epanechnikov"
     if inlist("`kernel'", "gau") local kernel "gaussian"
     if !inlist("`kernel'", "uniform", "triangular", "epanechnikov", "gaussian") {
-        di as err "kernel() must be uniform, triangular, epanechnikov, or gaussian (aliases: uni, tri, epa, gau); got '`kernel''"
+        di as err "kernel() must be one of: {bf:triangular}, {bf:epanechnikov}, {bf:uniform}, {bf:gaussian}"
+        di as err "  (abbreviations: tri, epa, uni, gau); got '`kernel''"
         exit 198
     }
 
@@ -101,46 +108,50 @@ program define rd2d_dist, eclass
     local bwselect = lower("`bwselect'")
     if ("`bwselect'" == "") local bwselect "mserd"
     if !inlist("`bwselect'", "mserd", "imserd", "msetwo", "imsetwo") {
-        di as err "bwselect() must be mserd, imserd, msetwo, or imsetwo; got '`bwselect''"
+        di as err "bwselect() must be one of: {bf:mserd}, {bf:imserd}, {bf:msetwo}, {bf:imsetwo}"
+        di as err "  mserd = MSE-optimal common bandwidth; msetwo = side-specific bandwidths"
         exit 198
     }
 
     local kink = lower("`kink'")
     if ("`kink'" == "") local kink "off"
     if !inlist("`kink'", "off", "on") {
-        di as err "kink() must be 'on' or 'off'; got '`kink''"
+        di as err "kink() must be {bf:on} or {bf:off}; kink(on) uses undersmoothing instead of RBC"
         exit 198
     }
 
     local vce = lower("`vce'")
     if ("`vce'" == "") local vce "hc1"
     if !inlist("`vce'", "hc0", "hc1", "hc2", "hc3") {
-        di as err "vce() must be hc0, hc1, hc2, or hc3; got '`vce''"
+        di as err "vce() must be one of: {bf:hc0}, {bf:hc1}, {bf:hc2}, {bf:hc3}"
+        di as err "  (hc1 is recommended for small-sample adjustment)"
         exit 198
     }
     if ("`clustername'" != "" & !inlist("`vce'", "hc0", "hc1")) {
-        di as txt "note: vce(`vce') not available with cluster(); using vce(hc1) cluster-robust"
+        di as txt "{bf:note}: vce(`vce') is not available with cluster(); using hc1 instead"
+        di as txt "  Reason: leverage-based HC2/HC3 corrections require observation-level structure"
         local vce "hc1"
     }
 
     local rbc = lower("`rbc'")
     if ("`rbc'" == "") local rbc "on"
     if !inlist("`rbc'", "on", "off") {
-        di as err "rbc() must be on or off"
+        di as err "rbc() must be {bf:on} (robust bias-corrected) or {bf:off} (conventional)"
         exit 198
     }
 
     local side = lower("`side'")
     if ("`side'" == "") local side "two"
     if !inlist("`side'", "two", "left", "right") {
-        di as err "side() must be two, left, or right"
+        di as err "side() must be {bf:two} (two-sided), {bf:left}, or {bf:right}"
         exit 198
     }
 
     local masspoints = lower("`masspoints'")
     if ("`masspoints'" == "") local masspoints "check"
     if !inlist("`masspoints'", "check", "adjust", "off") {
-        di as err "masspoints() must be check, adjust, or off"
+        di as err "masspoints() must be one of: {bf:check}, {bf:adjust}, {bf:off}"
+        di as err "  check = warn if mass points detected; adjust = adapt bandwidth"
         exit 198
     }
 
@@ -196,6 +207,7 @@ program define rd2d_dist, eclass
             quietly count if `touse' & ((`dvar' >= 0) != (`firstd' >= 0))
             if (r(N) > 0) {
                 di as err "distance columns must use a common treatment-side sign pattern (D<0=control, D>=0=treated)"
+                di as err "  All distance variables must classify the same observations as control/treated"
                 exit 198
             }
         }
@@ -204,7 +216,8 @@ program define rd2d_dist, eclass
     if ("`rbc'" == "off") local qeff = `p'
     else if (`qeff' < 0) local qeff = cond("`kink'" == "on", `p', `p' + 1)
     if (`qeff' < `p') {
-        di as err "q() must be >= p(); got q=`qeff' with p=`p'"
+        di as err "q() must be an integer >= p (currently p=`p'); got q=`qeff'"
+        di as err "  q=p+1 is the default for bias correction"
         exit 198
     }
     // kink(on): boundary kink degrades bias from h^{p+1} to h, making
@@ -228,7 +241,8 @@ program define rd2d_dist, eclass
         if (`N0j' < `side_min' | `N1j' < `side_min') {
             local failside = cond(`N0j' < `side_min', "control", "treated")
             local failnh = cond(`N0j' < `side_min', `N0j', `N1j')
-            di as err "insufficient observations on `failside' side (Nh=`failnh', min=`side_min') at distance column `j'; consider increasing h() or reducing p()"
+            di as err "Insufficient observations on `failside' side (Nh=`failnh', need `side_min') at distance column `j'"
+            di as err "  Suggestion: increase bandwidth with h() or reduce polynomial order p()"
             exit 2001
         }
     }
@@ -387,14 +401,18 @@ program define rd2d_dist, eclass
 
         if (`f0p' != 0 | `f1p' != 0 | `f0q' != 0 | `f1q' != 0) {
             local anyfallback 1
-            if (`f0p' != 0) di as txt "note: rank-deficient design at point j=`j' control-side p-fit; using generalized inverse (pinv). rank=" %4.0f `r0p' ///
-                " cond=" %9.3e `c0p'
-            if (`f1p' != 0) di as txt "note: rank-deficient design at point j=`j' treated-side p-fit; using generalized inverse (pinv). rank=" %4.0f `r1p' ///
-                " cond=" %9.3e `c1p'
-            if (`f0q' != 0) di as txt "note: rank-deficient design at point j=`j' control-side q-fit; using generalized inverse (pinv). rank=" %4.0f `r0q' ///
-                " cond=" %9.3e `c0q'
-            if (`f1q' != 0) di as txt "note: rank-deficient design at point j=`j' treated-side q-fit; using generalized inverse (pinv). rank=" %4.0f `r1q' ///
-                " cond=" %9.3e `c1q'
+            if (`f0p' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' control-side p-fit" _newline ///
+                "  rank=" %4.0f `r0p' " cond=" %9.3e `c0p' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f1p' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' treated-side p-fit" _newline ///
+                "  rank=" %4.0f `r1p' " cond=" %9.3e `c1p' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f0q' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' control-side q-fit" _newline ///
+                "  rank=" %4.0f `r0q' " cond=" %9.3e `c0q' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f1q' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' treated-side q-fit" _newline ///
+                "  rank=" %4.0f `r1q' " cond=" %9.3e `c1q' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
         }
 
         scalar `taup' = `mu1p' - `mu0p'
@@ -506,7 +524,7 @@ program define rd2d_dist, eclass
             matrix `results'[`j', 4] = sqrt(`covp'[`j', `j'])
         }
     }
-    if (`neval' > 1 | "`cbands'" != "" | "`clusterwork'" != "") {
+    if (`neval' > 1 | `cbands_on' | "`clusterwork'" != "") {
         mata: _rd2d_dist_cov_q("`yvar'", "`dvars'", "`touse'", "`hqmat'", `qeff', ///
             "`kernel'", "`vce'", "`clusterwork'", "`covq'", "`corrq'")
     }
@@ -537,7 +555,7 @@ program define rd2d_dist, eclass
             matrix `results'[`j', 10] = c(maxdouble)
         }
     }
-    if ("`cbands'" != "") {
+    if (`cbands_on') {
         forvalues j = 1/`neval' {
             if (`results'[`j', 6] <= 0 | `results'[`j', 6] >= .) {
                 di as err "unable to compute cbands with nonpositive standard error"
@@ -545,7 +563,7 @@ program define rd2d_dist, eclass
             }
         }
     }
-    if ("`cbands'" != "") {
+    if (`cbands_on') {
         mata: _rd2d_dist_cb_from_corr("`corrq'", `repp', `level', "`side'", ///
             "`cbcrit'", "`cbpsd'", "`cbmineig'")
         forvalues j = 1/`neval' {
@@ -591,6 +609,12 @@ program define rd2d_dist, eclass
 
     ereturn clear
     ereturn post `eb' `eV'
+    matrix colnames `results' = b1 b2 Est_p Se_p Est_q Se_q z pvalue CI_lower CI_upper CB_lower CB_upper h0 h1 h0rbc h1rbc Nh0 Nh1
+    matrix colnames `resultsA0' = b1 b2 Est_p Se_p Est_q Se_q h0 h0rbc Nh0
+    matrix colnames `resultsA1' = b1 b2 Est_p Se_p Est_q Se_q h1 h1rbc Nh1
+    matrix colnames `bwsout' = b1 b2 h0 h1 Nh0 Nh1
+    matrix colnames `diagnostics' = b1 b2 rank_p0 cond_p0 fb_p0 rank_p1 cond_p1 fb_p1 rank_q0 cond_q0 fb_q0 rank_q1 cond_q1 fb_q1
+    matrix colnames `massinfo' = M M0 M1 mass_ratio
     ereturn matrix results = `results'
     ereturn matrix results_A0 = `resultsA0'
     ereturn matrix results_A1 = `resultsA1'
@@ -614,6 +638,7 @@ program define rd2d_dist, eclass
     ereturn scalar scaleregul = `scaleregul'
     ereturn scalar cqt = `cqt'
     ereturn local cmd "rd2d_dist"
+        ereturn local depvar "`yvar'"
     ereturn local kernel "`kernel'"
     ereturn local bwselect "`bwselect'"
     ereturn local kink "`kink'"
@@ -622,15 +647,17 @@ program define rd2d_dist, eclass
     ereturn local side "`side'"
     ereturn local masspoints_opt "`masspoints'"
     ereturn local bwsource "`bwsource'"
-    ereturn local cbands = cond("`cbands'" != "", "on", "off")
+    ereturn local cbands = cond(`cbands_on', "on", "off")
     ereturn local clustered = cond("`clustername'" != "", "on", "off")
     ereturn local cluster "`clustername'"
     ereturn local fallback = cond(`anyfallback', "pinv", "invsym")
     ereturn local version "1.1.0"
+    ereturn local depvar "`yvar'"
+    ereturn local dvars "`dvars'"
 
     // --- cbands multi-point hint (4.2) ---
-    if (`neval' > 1 & "`cbands'" == "") {
-        di as txt "note: consider {cmd:cbands} option for uniform inference over `neval' evaluation points"
+    if (`neval' > 1 & !`cbands_on') {
+        di as txt "note: consider removing {cmd:nocbands} option for uniform inference over `neval' evaluation points"
     }
 
     // ===================================================================
@@ -667,7 +694,7 @@ program define rd2d_dist, eclass
     }
     di as txt "{hline `line_width'}"
     if (`ultra_table') {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             di as txt %4s "Pt" _col(7) %8s "Est" _col(17) %8s "SE"
             di as txt %4s "" _col(7) %7s "CI<" _col(16) %7s "CI>" ///
                 _col(25) %7s "CB<" _col(34) %7s "CB>"
@@ -680,7 +707,7 @@ program define rd2d_dist, eclass
         }
     }
     else if (`compact_table') {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             di as txt %6s "Point" _col(8) %6s "Est.q" _col(15) %6s "SE.q" ///
                 _col(22) %6s "CI.lo" _col(29) %6s "CI.hi" ///
                 _col(36) %6s "CB.lo" _col(43) %6s "CB.hi"
@@ -692,7 +719,7 @@ program define rd2d_dist, eclass
         }
     }
     else if (`narrow_table') {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             di as txt %8s "Point" _col(10) %8s "Est.q" _col(19) %8s "SE.q" ///
                 _col(28) %8s "CI.low" _col(37) %8s "CI.high" ///
                 _col(46) %8s "CB.low" _col(55) %8s "CB.high"
@@ -704,7 +731,7 @@ program define rd2d_dist, eclass
         }
     }
     else {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             di as txt %10s "Point" _col(12) %10s "Est.q" _col(23) %9s "SE.q" ///
                 _col(33) %9s "CI.low" _col(43) %9s "CI.high" ///
                 _col(53) %9s "CB.low" _col(63) %9s "CB.high"
@@ -730,7 +757,7 @@ program define rd2d_dist, eclass
         local seq = el(`display_results', `j', 6)
         local cil = el(`display_results', `j', 9)
         local ciu = el(`display_results', `j', 10)
-        if (`ultra_table' & "`cbands'" != "") {
+        if (`ultra_table' & `cbands_on') {
             local cbl = el(`display_results', `j', 11)
             local cbu = el(`display_results', `j', 12)
             local cil_u : display %7.3g `cil'
@@ -747,7 +774,7 @@ program define rd2d_dist, eclass
                 _col(16) %7s "`ciu_u'" _col(25) %7s "`cbl_u'" ///
                 _col(34) %7s "`cbu_u'"
         }
-        else if (`compact_table' & "`cbands'" != "") {
+        else if (`compact_table' & `cbands_on') {
             local cbl = el(`display_results', `j', 11)
             local cbu = el(`display_results', `j', 12)
             local cil_c : display %6.3g `cil'
@@ -763,7 +790,7 @@ program define rd2d_dist, eclass
                 _col(29) %6s "`ciu_c'" _col(36) %6s "`cbl_c'" ///
                 _col(43) %6s "`cbu_c'"
         }
-        else if (`narrow_table' & "`cbands'" != "") {
+        else if (`narrow_table' & `cbands_on') {
             local cbl = el(`display_results', `j', 11)
             local cbu = el(`display_results', `j', 12)
             local cil_n : display %8.4g `cil'
@@ -779,7 +806,7 @@ program define rd2d_dist, eclass
                 _col(37) %8s "`ciu_n'" _col(46) %8s "`cbl_n'" ///
                 _col(55) %8s "`cbu_n'"
         }
-        else if ("`cbands'" != "") {
+        else if (`cbands_on') {
             local cbl = el(`display_results', `j', 11)
             local cbu = el(`display_results', `j', 12)
             local cil_w : display %9.4g `cil'
@@ -843,7 +870,7 @@ program define rd2d_dist, eclass
         }
     }
     di as txt "{hline `line_width'}"
-    if ("`cbands'" != "") {
+    if (`cbands_on') {
         if (`ultra_table') {
             di as txt "  Uniform bands: " as res "on"
             di as txt "  Critical value: " as res %9.4g e(cb_crit)

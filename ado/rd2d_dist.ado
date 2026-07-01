@@ -638,6 +638,7 @@ program define rd2d_dist, eclass
     ereturn scalar scaleregul = `scaleregul'
     ereturn scalar cqt = `cqt'
     ereturn local cmd "rd2d_dist"
+        ereturn local depvar "`yvar'"
     ereturn local kernel "`kernel'"
     ereturn local bwselect "`bwselect'"
     ereturn local kink "`kink'"

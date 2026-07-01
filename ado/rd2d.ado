@@ -882,6 +882,7 @@ program define rd2d, eclass
     ereturn scalar scalebiascrct = `scalebiascrct'
     ereturn scalar derivsum = `derivsum'
     ereturn local cmd "rd2d"
+        ereturn local depvar "`yvar'"
     ereturn local kernel "`kernel'"
     ereturn local ktype "`ktype'"
     ereturn local bwselect "`bwselect'"

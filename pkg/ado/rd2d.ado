@@ -10,8 +10,11 @@ program define rd2d, eclass
         Q(string) KERnel(string) KTYPE(string) VCE(string) BWCHeck(string) ///
          MASSPoints(string) SCALEregul(real 3) SCALEbiascrct(real 1) STDVars RAWVARS ///
          LEVEL(real 95) REPP(integer 1000) SIDE(string) BWSELect(string) METHOD(string) RBC(string) ///
-         CBANDs CLuster(varname) ///
+         CBANDs NOCBANDs CLuster(varname) ///
          MP(string) SR(real -1) BWS(string) KT(string)]
+
+    // --- cbands default logic (v1.2.0: default ON, nocbands to disable) ---
+    local cbands_on = ("`nocbands'" == "")
 
     gettoken yvar rest : varlist
     gettoken x1var rest : rest
@@ -57,20 +60,22 @@ program define rd2d, eclass
     }
 
     if (`p' < 0) {
-        di as err "p() must be a nonnegative integer (0, 1, 2, ...); got `p'"
+        di as err "p() must be a positive integer (typically 1, 2, or 3); got `p'"
+        di as err "  p=1 (local linear) is recommended for most applications"
         exit 198
     }
     local qeff -1
     if ("`q'" != "") {
         capture confirm integer number `q'
         if (_rc | `q' < 0 | `q' >= .) {
-            di as err "q() must be a nonnegative integer (0, 1, 2, ...); got `q'"
+            di as err "q() must be a nonnegative integer >= p (currently p=`p'); got `q'"
+            di as err "  q=p+1 is the default for bias correction"
             exit 198
         }
         local qeff = `q'
     }
     if (`level' <= 0 | `level' >= 100) {
-        di as err "level() must be between 0 and 100"
+        di as err "level() must be between 0 and 100 (e.g., 95 for 95% confidence)"
         exit 198
     }
     if (`repp' < 1) {
@@ -78,7 +83,7 @@ program define rd2d, eclass
         exit 198
     }
     if (`scaleregul' >= . | `scaleregul' < 0) {
-        di as err "scaleregul() must be finite and nonnegative; got `scaleregul'"
+        di as err "scaleregul() must be a non-negative number (default: 3 for location); got `scaleregul'"
         exit 198
     }
     if (`scalebiascrct' >= . | `scalebiascrct' < 0) {
@@ -93,39 +98,43 @@ program define rd2d, eclass
     if inlist("`kernel'", "epa", "epan") local kernel "epanechnikov"
     if inlist("`kernel'", "gau") local kernel "gaussian"
     if !inlist("`kernel'", "uniform", "triangular", "epanechnikov", "gaussian") {
-        di as err "kernel() must be uniform, triangular, epanechnikov, or gaussian (aliases: uni, tri, epa, gau); got '`kernel''"
+        di as err "kernel() must be one of: {bf:triangular}, {bf:epanechnikov}, {bf:uniform}, {bf:gaussian}"
+        di as err "  (abbreviations: tri, epa, uni, gau); got '`kernel''"
         exit 198
     }
 
     local ktype = lower("`ktype'")
     if ("`ktype'" == "") local ktype "prod"
     if !inlist("`ktype'", "prod", "rad") {
-        di as err "ktype() must be prod or rad"
+        di as err "ktype() must be {bf:prod} (product kernel) or {bf:rad} (radial kernel)"
         exit 198
     }
 
     local bwselect = lower("`bwselect'")
     if ("`bwselect'" == "") local bwselect "mserd"
     if !inlist("`bwselect'", "mserd", "imserd", "msetwo", "imsetwo") {
-        di as err "bwselect() must be mserd, imserd, msetwo, or imsetwo; got '`bwselect''"
+        di as err "bwselect() must be one of: {bf:mserd}, {bf:imserd}, {bf:msetwo}, {bf:imsetwo}"
+        di as err "  mserd = MSE-optimal common bandwidth; msetwo = side-specific bandwidths"
         exit 198
     }
 
     local method = lower("`method'")
     if ("`method'" == "") local method "dpi"
     if !inlist("`method'", "dpi", "rot") {
-        di as err "method() must be dpi or rot"
+        di as err "method() must be {bf:dpi} (data-driven plug-in) or {bf:rot} (rule of thumb)"
         exit 198
     }
 
     local vce = lower("`vce'")
     if ("`vce'" == "") local vce "hc1"
     if !inlist("`vce'", "hc0", "hc1", "hc2", "hc3") {
-        di as err "vce() must be hc0, hc1, hc2, or hc3; got '`vce''"
+        di as err "vce() must be one of: {bf:hc0}, {bf:hc1}, {bf:hc2}, {bf:hc3}"
+        di as err "  (hc1 is recommended for small-sample adjustment)"
         exit 198
     }
     if ("`clustername'" != "" & !inlist("`vce'", "hc0", "hc1")) {
-        di as txt "note: vce(`vce') not available with cluster(); using vce(hc1) cluster-robust"
+        di as txt "{bf:note}: vce(`vce') is not available with cluster(); using hc1 instead"
+        di as txt "  Reason: leverage-based HC2/HC3 corrections require observation-level structure"
         local vce "hc1"
     }
 
@@ -138,21 +147,22 @@ program define rd2d, eclass
     local rbc = lower("`rbc'")
     if ("`rbc'" == "") local rbc "on"
     if !inlist("`rbc'", "on", "off") {
-        di as err "rbc() must be on or off"
+        di as err "rbc() must be {bf:on} (robust bias-corrected) or {bf:off} (conventional)"
         exit 198
     }
 
     local side = lower("`side'")
     if ("`side'" == "") local side "two"
     if !inlist("`side'", "two", "left", "right") {
-        di as err "side() must be two, left, or right"
+        di as err "side() must be {bf:two} (two-sided), {bf:left}, or {bf:right}"
         exit 198
     }
 
     local masspoints = lower("`masspoints'")
     if ("`masspoints'" == "") local masspoints "check"
     if !inlist("`masspoints'", "check", "adjust", "off") {
-        di as err "masspoints() must be check, adjust, or off; got '`masspoints''"
+        di as err "masspoints() must be one of: {bf:check}, {bf:adjust}, {bf:off}"
+        di as err "  check = warn if mass points detected; adjust = adapt bandwidth"
         exit 198
     }
 
@@ -187,7 +197,8 @@ program define rd2d, eclass
     local atlist "`at'"
     local atcount : word count `atlist'
     if (`atcount' < 2 | mod(`atcount', 2) != 0) {
-        di as err "at() requires pairs of coordinates (b1 b2); number of values must be even"
+        di as err "at() requires pairs of coordinates: at(b1 b2) or at(b1 b2 b1 b2 ...)"
+        di as err "  Example: at(0 0) for single point, at(0 0 1 1) for two points"
         exit 198
     }
     forvalues i = 1/`atcount' {
@@ -274,7 +285,8 @@ program define rd2d, eclass
     if ("`rbc'" == "off") local qeff = `p'
     else if (`qeff' < 0) local qeff = `p' + 1
     if (`qeff' < `p') {
-        di as err "q() must be at least p()"
+        di as err "q() must be an integer >= p (currently p=`p'); got q=`qeff'"
+        di as err "  q=p+1 is the default for bias correction"
         exit 198
     }
 
@@ -286,7 +298,8 @@ program define rd2d, eclass
     if (`N0' < `qbasis' | `N1' < `qbasis') {
         local failside = cond(`N0' < `qbasis', "control", "treated")
         local failnh = cond(`N0' < `qbasis', `N0', `N1')
-        di as err "insufficient observations on `failside' side (Nh=`failnh', min=`qbasis'); consider increasing h() or reducing p()"
+        di as err "Insufficient observations on `failside' side (Nh=`failnh', need `qbasis')"
+        di as err "  Suggestion: increase bandwidth with h() or reduce polynomial order p()"
         exit 2001
     }
 
@@ -399,6 +412,8 @@ program define rd2d, eclass
         matrix `massinfo' = J(`neval', 4, .)
         matrix `bwconsts' = J(`neval', 10, .)
         matrix `bwbounds' = J(`neval', 4, .)
+        // Initialize DPI multi-point cache (invalidated; populated on first rdbw2d call)
+        mata: _rdbw2d_cache_valid = 0
         forvalues j = 1/`neval' {
             local ai = 2 * `j' - 1
             local bi = 2 * `j'
@@ -428,6 +443,11 @@ program define rd2d, eclass
                 matrix `bwbounds'[`j', `c'] = `boundone'[1, `c']
             }
         }
+        // Clear DPI multi-point cache (release memory)
+        mata: _rdbw2d_cache_valid = 0
+        mata: _rdbw2d_cache_x1_0 = _rdbw2d_cache_x2_0 = _rdbw2d_cache_y_0 = _rdbw2d_cache_C_0 = J(0, 1, .)
+        mata: _rdbw2d_cache_x1_1 = _rdbw2d_cache_x2_1 = _rdbw2d_cache_y_1 = _rdbw2d_cache_C_1 = J(0, 1, .)
+        mata: _rdbw2d_cache_unique0 = _rdbw2d_cache_unique1 = J(0, 0, .)
         // Mass-point warning for automatic-bandwidth path: rdbw2d fills
         // massinfo per evaluation point from its local sample.
         _rd2d_masspoints_warn, matrix(`massinfo') neval(`neval') masspoints(`masspoints')
@@ -608,14 +628,18 @@ program define rd2d, eclass
 
         if (`f0p' != 0 | `f1p' != 0 | `f0q' != 0 | `f1q' != 0) {
             local anyfallback 1
-            if (`f0p' != 0) di as txt "note: rank-deficient design at point j=`j' control-side p-fit; using generalized inverse (pinv). rank=" %4.0f `r0p' ///
-                " cond=" %9.3e `c0p'
-            if (`f1p' != 0) di as txt "note: rank-deficient design at point j=`j' treated-side p-fit; using generalized inverse (pinv). rank=" %4.0f `r1p' ///
-                " cond=" %9.3e `c1p'
-            if (`f0q' != 0) di as txt "note: rank-deficient design at point j=`j' control-side q-fit; using generalized inverse (pinv). rank=" %4.0f `r0q' ///
-                " cond=" %9.3e `c0q'
-            if (`f1q' != 0) di as txt "note: rank-deficient design at point j=`j' treated-side q-fit; using generalized inverse (pinv). rank=" %4.0f `r1q' ///
-                " cond=" %9.3e `c1q'
+            if (`f0p' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' control-side p-fit" _newline ///
+                "  rank=" %4.0f `r0p' " cond=" %9.3e `c0p' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f1p' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' treated-side p-fit" _newline ///
+                "  rank=" %4.0f `r1p' " cond=" %9.3e `c1p' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f0q' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' control-side q-fit" _newline ///
+                "  rank=" %4.0f `r0q' " cond=" %9.3e `c0q' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
+            if (`f1q' != 0) di as txt "{bf:note}: design matrix rank-deficient at point j=`j' treated-side q-fit" _newline ///
+                "  rank=" %4.0f `r1q' " cond=" %9.3e `c1q' _newline ///
+                "  Using generalized inverse (pinv). Consider: larger h(), stdvars, or lower p()"
         }
 
         matrix `tmp' = `targetp' * `b0p''
@@ -757,7 +781,7 @@ program define rd2d, eclass
             matrix `results'[`j', 4] = sqrt(`covp'[`j', `j'])
         }
     }
-    if (`neval' > 1 | "`cbands'" != "" | "`clusterwork'" != "") {
+    if (`neval' > 1 | `cbands_on' | "`clusterwork'" != "") {
         mata: _rd2d_loc_cov_q("`yvar'", "`x1var'", "`x2var'", "`tvar'", "`touse'", ///
             "`bws'", "`hqmat'", "`targetq'", `qeff', "`kernel'", "`ktype'", "`vce'", ///
             "0", "`clusterwork'", "`covq'", "`corrq'")
@@ -789,7 +813,7 @@ program define rd2d, eclass
             matrix `results'[`j', 10] = c(maxdouble)
         }
     }
-    if ("`cbands'" != "") {
+    if (`cbands_on') {
         forvalues j = 1/`neval' {
             if (`results'[`j', 6] <= 0 | `results'[`j', 6] >= .) {
                 di as err "unable to compute cbands with nonpositive standard error"
@@ -828,6 +852,12 @@ program define rd2d, eclass
 
     ereturn clear
     ereturn post `eb' `eV'
+    matrix colnames `results' = b1 b2 Est_p Se_p Est_q Se_q z pvalue CI_lower CI_upper CB_lower CB_upper h01 h02 h11 h12 Nh0 Nh1
+    matrix colnames `resultsA0' = b1 b2 Est_p Se_p Est_q Se_q h01 h02 Nh0
+    matrix colnames `resultsA1' = b1 b2 Est_p Se_p Est_q Se_q h11 h12 Nh1
+    matrix colnames `bwsout' = b1 b2 h01 h02 h11 h12 Nh0 Nh1
+    matrix colnames `diagnostics' = b1 b2 rank_p0 cond_p0 fb_p0 rank_p1 cond_p1 fb_p1 rank_q0 cond_q0 fb_q0 rank_q1 cond_q1 fb_q1
+    matrix colnames `massinfo' = M M0 M1 mass_ratio
     ereturn matrix results = `results'
     ereturn matrix results_A0 = `resultsA0'
     ereturn matrix results_A1 = `resultsA1'
@@ -852,6 +882,7 @@ program define rd2d, eclass
     ereturn scalar scalebiascrct = `scalebiascrct'
     ereturn scalar derivsum = `derivsum'
     ereturn local cmd "rd2d"
+        ereturn local depvar "`yvar'"
     ereturn local kernel "`kernel'"
     ereturn local ktype "`ktype'"
     ereturn local bwselect "`bwselect'"
@@ -861,7 +892,7 @@ program define rd2d, eclass
     ereturn local side "`side'"
     ereturn local masspoints_opt "`masspoints'"
     ereturn local bwsource "`bwsource'"
-    ereturn local cbands = cond("`cbands'" != "", "on", "off")
+    ereturn local cbands = cond(`cbands_on', "on", "off")
     ereturn local clustered = cond("`clustername'" != "", "on", "off")
     ereturn local cluster "`clustername'"
     ereturn local stdvars = cond("`bwsource'" == "automatic" & `stdvars_active', "on", "off")
@@ -870,10 +901,15 @@ program define rd2d, eclass
     ereturn local tangvec "`tangvec'"
     ereturn local fallback = cond(`anyfallback', "pinv", "invsym")
     ereturn local version "1.1.0"
+    ereturn local depvar "`yvar'"
+    ereturn local x1var "`x1var'"
+    ereturn local x2var "`x2var'"
+    ereturn local tvar "`tvar'"
+    ereturn local atstring `"`at'"'
 
     // --- cbands multi-point hint (4.2) ---
-    if (`neval' > 1 & "`cbands'" == "") {
-        di as txt "note: consider {cmd:cbands} option for uniform inference over `neval' evaluation points"
+    if (`neval' > 1 & !`cbands_on') {
+        di as txt "note: consider removing {cmd:nocbands} option for uniform inference over `neval' evaluation points"
     }
 
 
@@ -931,7 +967,7 @@ program define rd2d, eclass
         local ci_hi "CI.high"
         local cb_lo "CB.low"
         local cb_hi "CB.high"
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             local nfmt1 "%10.4g"
             local nfmt2 "%9.4g"
             local nw1 10
@@ -946,7 +982,7 @@ program define rd2d, eclass
     }
     * --- Derived column headers, widths, and positions (non-ultra) ---
     if ("`layout'" != "ultra") {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             local h1 "Est.q"
             local h2 "SE.q"
             local h3 "`ci_lo'"
@@ -1019,7 +1055,7 @@ program define rd2d, eclass
 
     * --- Column headers ---
     if ("`layout'" == "ultra") {
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             di as txt %4s "Pt" _col(7) %8s "Est" _col(17) %8s "SE"
             di as txt %4s "" _col(7) %7s "CI<" _col(16) %7s "CI>" ///
                 _col(25) %7s "CB<" _col(34) %7s "CB>"
@@ -1058,7 +1094,7 @@ program define rd2d, eclass
         local ciu_s : display `bfmt' `ciu'
         if (`cil' <= -c(maxdouble) / 2) local cil_s "-inf"
         if (`ciu' >= c(maxdouble) / 2) local ciu_s "inf"
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             local cbl = el(`display_results', `j', 11)
             local cbu = el(`display_results', `j', 12)
             local cbl_s : display `bfmt' `cbl'
@@ -1067,7 +1103,7 @@ program define rd2d, eclass
             if (`cbu' >= c(maxdouble) / 2) local cbu_s "inf"
         }
         * Prepare display values (v1-v6 unified for all layouts)
-        if ("`cbands'" != "") {
+        if (`cbands_on') {
             local v1 : display `nfmt1' `estq'
             local v2 : display `nfmt2' `seq'
             local v3 "`cil_s'"
@@ -1083,10 +1119,10 @@ program define rd2d, eclass
             local v5 "`cil_s'"
             local v6 "`ciu_s'"
         }
-        if ("`layout'" == "ultra" & "`cbands'" == "") local v4 : display %7.3g `seq'
+        if ("`layout'" == "ultra" & !`cbands_on') local v4 : display %7.3g `seq'
         * Display row
         if ("`layout'" == "ultra") {
-            if ("`cbands'" != "") {
+            if (`cbands_on') {
                 di as res %4s "`dname'" _col(7) %8s "`v1'" _col(17) %8s "`v2'"
                 di as res %4s "" _col(7) %7s "`v3'" ///
                     _col(16) %7s "`v4'" _col(25) %7s "`v5'" ///
@@ -1109,7 +1145,7 @@ program define rd2d, eclass
     di as txt "{hline `line_width'}"
 
     * --- Footer ---
-    if ("`cbands'" != "") {
+    if (`cbands_on') {
         if ("`layout'" == "ultra") {
             di as txt "  Uniform bands: " as res "on"
             di as txt "  Critical value: " as res %9.4g e(cb_crit)
@@ -1400,7 +1436,8 @@ real matrix _rd2d_loc_cluster_crossprod(real matrix psi, real colvector C)
 //
 // Inputs:
 //   u       : real colvector  - standardized distances (u = x/h)
-//   kernel  : string scalar   - uniform/triangular/epanechnikov/gaussian
+//   kflag   : real scalar     - kernel index (1=uniform, 2=triangular,
+//                                3=epanechnikov, 4=gaussian)
 //
 // Output:
 //   returns : real colvector  - kernel weights K(u), non-negative
@@ -1413,18 +1450,18 @@ real matrix _rd2d_loc_cluster_crossprod(real matrix psi, real colvector C)
 //   - Gaussian: exp(-u^2/2)/sqrt(2*pi), infinite support
 //   - Separate from rdbw2d kernel for modularity
 // ---------------------------------------------------------------------------
-real colvector _rd2d_loc_cov_kernel(real colvector u, string scalar kernel)
+real colvector _rd2d_loc_cov_kernel(real colvector u, real scalar kflag)
 {
     real colvector a, w
 
     a = abs(u)
-    if (kernel == "uniform") {
+    if (kflag == 1) {
         w = 0.5 :* (a :<= 1 + 1e-12)
     }
-    else if (kernel == "triangular") {
+    else if (kflag == 2) {
         w = (1 :- a) :* (a :<= 1)
     }
-    else if (kernel == "epanechnikov") {
+    else if (kflag == 3) {
         w = 0.75 :* (1 :- u:^2) :* (a :<= 1)
     }
     else {
@@ -1594,13 +1631,18 @@ real colvector _rd2d_loc_side_influence(
     string scalar ktype,
     string scalar vce,
     real scalar stdvars,
-    real scalar hascluster)
+    real scalar hascluster,
+    | real scalar sd1_cached,
+      real scalar sd2_cached)
 {
     real colvector y, x1, x2, d, C, xc1, xc2, fituse, w, resid, hii, adj, psi, idx
     real colvector clusters, cidx
     real matrix X, bread, ibread, beta, Xw, Xwr, scores
     real rowvector diag
-    real scalar nfull, n, k, hr, sd1, sd2, g, j, factor
+    real scalar nfull, n, k, hr, sd1, sd2, g, j, factor, kflag
+
+    kflag = (kernel == "uniform") * 1 + (kernel == "triangular") * 2 + (kernel == "epanechnikov") * 3 + (kernel == "gaussian") * 4
+    if (kflag == 0) kflag = 4
 
     st_view(y = ., ., yname, tousename)
     st_view(x1 = ., ., x1name, tousename)
@@ -1614,8 +1656,14 @@ real colvector _rd2d_loc_side_influence(
     sd1 = 1
     sd2 = 1
     if (stdvars != 0) {
-        sd1 = sqrt(variance(x1))
-        sd2 = sqrt(variance(x2))
+        if (args() >= 20 & sd1_cached > 0 & sd2_cached > 0) {
+            sd1 = sd1_cached
+            sd2 = sd2_cached
+        }
+        else {
+            sd1 = sqrt(variance(x1))
+            sd2 = sqrt(variance(x2))
+        }
         if (!(sd1 > 0) || !(sd2 > 0)) {
             errprintf("stdvars requires positive sample standard deviations\n")
             _error(198)
@@ -1635,11 +1683,11 @@ real colvector _rd2d_loc_side_influence(
     else fituse = (d :!= 0)
 
     if (ktype == "prod") {
-        w = _rd2d_loc_cov_kernel(xc1 :/ h1, kernel) :* _rd2d_loc_cov_kernel(xc2 :/ h2, kernel) :/ (h1 * h2)
+        w = _rd2d_loc_cov_kernel(xc1 :/ h1, kflag) :* _rd2d_loc_cov_kernel(xc2 :/ h2, kflag) :/ (h1 * h2)
     }
     else {
         hr = sqrt(h1^2 + h2^2)
-        w = _rd2d_loc_cov_kernel(sqrt(xc1:^2 + xc2:^2) :/ hr, kernel) :/ (hr^2)
+        w = _rd2d_loc_cov_kernel(sqrt(xc1:^2 + xc2:^2) :/ hr, kflag) :/ (hr^2)
     }
 
     fituse = fituse :& (w :> 0)
@@ -1762,16 +1810,36 @@ void _rd2d_loc_cov_q(
     hq = st_matrix(hqname)
     target = st_matrix(targetname)
     k = rows(bws)
+
+    // Memory safety check: psit + psic = 2 * N * k * 8 bytes
+    if (2 * rows(y) * k * 8 / (1024 * 1024) > 2048) {
+        printf("{txt}note: covariance computation requires %g MB for %g evaluation points\n",
+               2 * rows(y) * k * 8 / (1024 * 1024), k)
+        printf("{txt}      consider reducing the number of evaluation points if memory is limited\n")
+    }
+
     psit = J(rows(y), k, 0)
     psic = J(rows(y), k, 0)
+
+    // Pre-compute stdvars constants to avoid redundant variance() calls
+    real scalar sd1_pre, sd2_pre
+    real colvector x1_tmp, x2_tmp
+    sd1_pre = 0
+    sd2_pre = 0
+    if (strtoreal(stdflag) != 0) {
+        st_view(x1_tmp = ., ., x1name, tousename)
+        st_view(x2_tmp = ., ., x2name, tousename)
+        sd1_pre = sqrt(variance(x1_tmp))
+        sd2_pre = sqrt(variance(x2_tmp))
+    }
 
     for (j = 1; j <= k; j++) {
         psit[, j] = _rd2d_loc_side_influence(yname, x1name, x2name, dname, tousename, cname, ///
             bws[j, 1], bws[j, 2], hq[j, 3], hq[j, 4], p, "treated", target, ///
-            kernel, ktype, vce, strtoreal(stdflag), hascluster)
+            kernel, ktype, vce, strtoreal(stdflag), hascluster, sd1_pre, sd2_pre)
         psic[, j] = _rd2d_loc_side_influence(yname, x1name, x2name, dname, tousename, cname, ///
             bws[j, 1], bws[j, 2], hq[j, 1], hq[j, 2], p, "control", target, ///
-            kernel, ktype, vce, strtoreal(stdflag), hascluster)
+            kernel, ktype, vce, strtoreal(stdflag), hascluster, sd1_pre, sd2_pre)
     }
 
     psi = psit - psic
