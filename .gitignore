@@ -1,0 +1,17 @@
+# Log files
+*.log
+
+# Stata temp files
+*.dta~
+*.tmp
+
+# Internal checklists
+RELEASE-CHECKLIST.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*~
