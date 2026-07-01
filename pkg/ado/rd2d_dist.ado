@@ -638,7 +638,7 @@ program define rd2d_dist, eclass
     ereturn scalar scaleregul = `scaleregul'
     ereturn scalar cqt = `cqt'
     ereturn local cmd "rd2d_dist"
-        ereturn local depvar "`yvar'"
+    ereturn local depvar "`yvar'"
     ereturn local kernel "`kernel'"
     ereturn local bwselect "`bwselect'"
     ereturn local kink "`kink'"
@@ -652,7 +652,6 @@ program define rd2d_dist, eclass
     ereturn local cluster "`clustername'"
     ereturn local fallback = cond(`anyfallback', "pinv", "invsym")
     ereturn local version "1.1.0"
-    ereturn local depvar "`yvar'"
     ereturn local dvars "`dvars'"
 
     // --- cbands multi-point hint (4.2) ---
