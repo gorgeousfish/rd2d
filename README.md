@@ -242,5 +242,3 @@ Cattaneo, M. D., Titiunik, R., & Yu, R. R. (2026). Estimation and inference in b
 
 - Xuanyu Cai, City University of Macau
 - Wenli Xu, City University of Macau
-
-Website: [https://github.com/gorgeousfish/rd2d](https://github.com/gorgeousfish/rd2d)
