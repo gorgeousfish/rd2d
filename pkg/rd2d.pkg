@@ -35,5 +35,5 @@ f examples/rd2d_table_example.do
 f examples/rd2d_table_example_esttab.do
 f examples/rd2d_sensitivity_example.do
 f examples/rd2d_tutorial_workflow.do
-g data/data_rd2d.csv
-g data/eval.csv
+e data/data_rd2d.csv
+e data/eval.csv
